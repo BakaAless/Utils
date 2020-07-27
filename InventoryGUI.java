@@ -1,4 +1,5 @@
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -10,24 +11,34 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
 public class InventoryGUI implements Listener {
 
-    private JavaPlugin plugin;
+    private boolean created;
+
     private Inventory inventory;
+
+    private JavaPlugin plugin;
+
     private Map<Integer, ItemStack> slots;
     private Map<Integer, Consumer<InventoryClickEvent>> actions;
     private Map<Integer, Boolean> cancelled;
 
+    private List<Player> viewers;
+
     private InventoryGUI(final JavaPlugin plugin, final int rows, final String title) {
+        this.created = false;
+        this.inventory = Bukkit.createInventory(null, 9 * rows, ChatColor.translateAlternateColorCodes('&', title));
         this.plugin = plugin;
-        this.inventory = Bukkit.createInventory(null, 9 * rows, title);
         this.slots = new HashMap<>();
         this.actions = new HashMap<>();
         this.cancelled = new HashMap<>();
+        this.viewers = new ArrayList<>();
     }
 
     public static InventoryGUI build(final JavaPlugin plugin, final int rows) {
@@ -51,6 +62,7 @@ public class InventoryGUI implements Listener {
     }
 
     public InventoryGUI addItem(final int slot, final ItemStack itemStack, final Consumer<InventoryClickEvent> eventConsumer, final boolean cancelled) {
+        if (this.created) return this;
         if (this.slots.containsKey(slot)) {
             this.slots.remove(slot);
             this.cancelled.remove(slot);
@@ -62,14 +74,28 @@ public class InventoryGUI implements Listener {
         this.actions.put(slot, eventConsumer);
         return this;
     }
-    
+
     public ItemStack getItemStack(final int slot) {
         return this.slots.get(slot);
     }
 
-    public void create(final Player player) {
+    public InventoryGUI create() {
         Bukkit.getPluginManager().registerEvents(this, plugin);
+        this.created = true;
+        return this;
+    }
+
+    public void render(final Player player) {
+        if (!this.created) return;
         player.openInventory(inventory);
+        this.viewers.add(player);
+    }
+
+    public void close(final Player player) {
+        if (!this.created) return;
+        if (!this.viewers.contains(player)) return;
+        player.closeInventory();
+        this.viewers.remove(player);
     }
 
     @EventHandler
@@ -85,17 +111,30 @@ public class InventoryGUI implements Listener {
 
     @EventHandler
     public void onInventoryClose(final InventoryCloseEvent e) {
+        if (!e.getInventory().equals(inventory)) return;
+        this.viewers.remove((Player) e.getPlayer());
+        if (this.viewers.size() > 0) return;
         HandlerList.unregisterAll(this);
         this.plugin = null;
         this.inventory = null;
         this.slots = null;
         this.actions = null;
         this.cancelled = null;
+        this.viewers = null;
         try {
             this.finalize();
         } catch (Throwable throwable) {
             throwable.printStackTrace();
         }
     }
-    
+
+    public Object clone() {
+        try {
+            return super.clone();
+        } catch (CloneNotSupportedException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
 }
